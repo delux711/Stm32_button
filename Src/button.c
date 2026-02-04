@@ -6,8 +6,8 @@
 #define LONG_PRESS_MS     800
 #define MULTICLICK_MS     400   // max pauza medzi klikmi
 
-#define BUTTON_DEF(port, pin, exti, single_cb, double_cb, triple_cb, long_cb) \
-    { port, (1 << pin), exti, 0, 0, 0, 0, 0, 0, single_cb, double_cb, triple_cb, long_cb }
+#define BUTTON_DEF(port, pin, single_cb, double_cb, triple_cb, long_cb) \
+    { port, (1 << pin), pin, 0, 0, 0, 0, 0, 0, single_cb, double_cb, triple_cb, long_cb }
 
 typedef void (*button_cb_t)(void);
 typedef enum {
@@ -41,6 +41,7 @@ typedef struct {
 volatile uint32_t sys_ms = 0;
 static void delay_ms(uint32_t ms);
 static void EXTI_globalHandler(void);
+static void led_pc13_toggle(void);
 
 
 static void btn0_single(void);
@@ -48,40 +49,36 @@ static void btn0_double(void);
 static void btn0_triple(void);
 static void btn0_long(void);
 
+// NOTE: PIN sa nesmie opakovat -- tj. nie je mozne pouzit npr. PA1 a PB1 -- EXTI to nedovoluje (obmedzuje)
 static volatile button_t buttons[] = {
-    // Tlačidlo 0 – PB12
-    BUTTON_DEF(GPIOB, 12, 12, btn0_single, btn0_double, btn0_triple, btn0_long),
-    BUTTON_DEF(GPIOC, 15, 15, btn0_long  , btn0_triple, btn0_double, btn0_single),
-    BUTTON_DEF(GPIOA,  1,  1,          0U, btn0_double, btn0_triple, 0U),
-    // Tlačidlo 1 – PB9
-    // BUTTON_DEF(GPIOB,  9,  9, btn1_single, NULL, NULL, btn1_long)
+            //  PORT, PIN,  single*      double*      triple*      long*    * press function
+    BUTTON_DEF(GPIOB, 12u, btn0_single, btn0_double, btn0_triple, btn0_long  ),  // Tlacidlo 0 – PB12
+    BUTTON_DEF(GPIOC, 15u, btn0_long  , btn0_triple, btn0_double, btn0_single),  // Tlacidlo 1 – PC15
+    BUTTON_DEF(GPIOA,  1u,     0u     , btn0_double, btn0_triple,     0u     )   // Tlacidlo 2 – PA1
 };
 #define BUTTON_COUNT (sizeof(buttons) / sizeof(buttons[0]))
 
 static volatile uint8_t papuValue = 0u;
 static void btn0_single(void) {
+    (void)papuValue;
     papuValue = 1;
-    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    led_pc13_toggle();
     GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
-    // led_pc13_blink(papuValue);
 }
 static void btn0_double(void) {
     papuValue = 2;
-    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    led_pc13_toggle();
     GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR14) ? GPIO_BSRR_BR14 : GPIO_BSRR_BS14;
-    // led_pc13_blink(papuValue);
 }
 static void btn0_triple(void) {
     papuValue = 3;
-    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    led_pc13_toggle();
     GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR15) ? GPIO_BSRR_BR15 : GPIO_BSRR_BS15;
-    // led_pc13_blink(papuValue);
 }
 static void btn0_long(void) {
     papuValue = 4;
-    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    led_pc13_toggle();
     GPIOA->BSRR = (GPIOA->ODR & GPIO_ODR_ODR8) ? GPIO_BSRR_BR8 : GPIO_BSRR_BS8;
-    // led_pc13_blink(papuValue);
 }
 
 
@@ -95,70 +92,67 @@ static void button_process(volatile button_t *b)
     uint8_t raw = button_raw(b);
 
     switch (b->state) {
-
-    case BTN_IDLE:
-        if (raw == 0) {
-            b->state = BTN_DEBOUNCE_PRESS;
-            b->timer = DEBOUNCE_MS;
-        }
-        break;
-
-    case BTN_DEBOUNCE_PRESS:
-        if (raw == 0) {
-            if (--b->timer == 0) {
-                b->state = BTN_PRESSED;
-                b->press_time = 0;
-                b->long_sent = 0;
+        case BTN_IDLE:
+            if (raw == 0) {
+                b->state = BTN_DEBOUNCE_PRESS;
+                b->timer = DEBOUNCE_MS;
             }
-        } else {
-            b->state = BTN_IDLE;
-        }
-        break;
-
-    case BTN_PRESSED:
-        b->press_time++;
-
-        if (!b->long_sent && b->press_time >= LONG_PRESS_MS) {
-            b->long_sent = 1;
-            if (b->on_long) b->on_long();
-        }
-
-        if (raw == 1) {
-            b->state = BTN_DEBOUNCE_RELEASE;
-            b->timer = DEBOUNCE_MS;
-        }
-        break;
-
-    case BTN_DEBOUNCE_RELEASE:
-        if (raw == 1) {
-            if (--b->timer == 0) {
-                b->state = BTN_IDLE;
-
-                if (!b->long_sent) {
-                    b->click_count++;
-                    b->timer = MULTICLICK_MS;
+            break;
+        case BTN_DEBOUNCE_PRESS:
+            if (raw == 0) {
+                if (--b->timer == 0) {
+                    b->state = BTN_PRESSED;
+                    b->press_time = 0;
+                    b->long_sent = 0;
                 }
+            } else {
+                b->state = BTN_IDLE;
             }
-        } else {
-            b->state = BTN_PRESSED;
-        }
-        break;
+            break;
+        case BTN_PRESSED:
+            b->press_time++;
+
+            if (!b->long_sent && b->press_time >= LONG_PRESS_MS) {
+                b->long_sent = 1;
+                if (b->on_long)
+                    b->on_long();
+            }
+
+            if (raw == 1) {
+                b->state = BTN_DEBOUNCE_RELEASE;
+                b->timer = DEBOUNCE_MS;
+            }
+            break;
+        case BTN_DEBOUNCE_RELEASE:
+            if (raw == 1) {
+                if (--b->timer == 0) {
+                    b->state = BTN_IDLE;
+
+                    if (!b->long_sent) {
+                        b->click_count++;
+                        b->timer = MULTICLICK_MS;
+                    } else {
+                        // long press finished -> exit polling and re-enable EXTI immediately
+                        b->active = 0;
+                        EXTI->IMR |= (1u << b->exti_line);
+                    }
+                }
+            } else {
+                b->state = BTN_PRESSED;
+            }
+            break;
     }
 }
-
 
 static void button_multiclick_process(volatile button_t *b)
 {
     if (b->click_count > 0 && b->state == BTN_IDLE) {
-
         if (b->timer > 0 && --b->timer == 0) {
-
             switch (b->click_count) {
-            case 1: if (b->on_single) b->on_single(); break;
-            case 2: if (b->on_double) b->on_double(); break;
-            case 3: if (b->on_triple) b->on_triple(); break;
+                case 1: if (b->on_single) b->on_single(); break;
+                case 2: if (b->on_double) b->on_double(); break;
+                case 3: if (b->on_triple) b->on_triple(); break;
             }
-
             b->click_count = 0;
 
             /* návrat do EXTI režimu */
@@ -167,7 +161,6 @@ static void button_multiclick_process(volatile button_t *b)
         }
     }
 }
-
 
 void led_pc13_init(void) {
     uint32_t reg;
@@ -197,15 +190,6 @@ static void led_pc13_toggle(void) {
     GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
 }
 
-void led_pc13_blink(uint8_t count) {
-    for (uint8_t i = 0; i < count; i++) {
-        GPIOC->BRR  = (1 << 13); // LED ON
-        delay_ms(200);
-        GPIOC->BSRR = (1 << 13); // LED OFF
-        delay_ms(200);
-    }
-}
-
 static void delay_ms(uint32_t ms) {
     uint32_t start = sys_ms;
     while ((sys_ms - start) < ms) {
@@ -230,17 +214,17 @@ static void buttons_exti_init(void)
         else if (b->port == GPIOC) port_source = 2;
         else if (b->port == GPIOD) port_source = 3;
 
-        if (line <= 3)      AFIO->EXTICR[0] |= port_source << (line * 4);
-        else if (line <= 7) AFIO->EXTICR[1] |= port_source << ((line - 4) * 4);
-        else if (line <= 11) AFIO->EXTICR[2] |= port_source << ((line - 8) * 4);
-        else if (line <= 15) AFIO->EXTICR[3] |= port_source << ((line - 12) * 4);
+        // Clear previous mapping and set new one
+        uint32_t idx = line / 4;
+        uint32_t shift = (line % 4) * 4;
+        AFIO->EXTICR[idx] = (AFIO->EXTICR[idx] & ~(0xF << shift)) | (port_source << shift);
 
         // Nastavenie EXTI
         EXTI->IMR  |= (1 << line);  // unmask
         EXTI->EMR  &= ~(1 << line); // len interrupt
         EXTI->RTSR |= (1 << line);  // zmena na nábežnú hranu
         EXTI->FTSR |= (1 << line);  // aj zostupnú hranu (záleží od logiky tlačidla)
-        EXTI->PR   = (1 << line);   // clear pending
+        EXTI->PR    = (1 << line);  // clear pending
 
         // Povolenie NVIC pre EXTI 10-15 (ak máš viac tlačidiel)
         if(b->exti_line <= 4u) {
@@ -311,7 +295,6 @@ static void EXTI_globalHandler(void) {
         if (pending & mask) {
             EXTI->PR = mask;                 // clear pending
             EXTI->IMR &= ~mask;              // vypnúť EXTI
-
             buttons[i].active = 1;           // prejsť do polling
         }
     }
@@ -319,7 +302,6 @@ static void EXTI_globalHandler(void) {
 
 void SysTick_Handler(void)
 {
-    (void)papuValue;
     sys_ms++;
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
         if (buttons[i].active) {
