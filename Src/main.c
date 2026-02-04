@@ -1,15 +1,17 @@
 #include <stm32f10x.h>
 #include "system_stm32f10x.h"
-
-extern void buttonInit(void);
+#include "button.h"
 
 int main(void) {
     SystemInit();
     SystemCoreClockUpdate();
 
-    buttonInit();
+    buttons_hw_init();
+    SysTick_Config(SystemCoreClock / 1000);
 
     for(;;) {
+        __WFI();         // EXTI zobudí CPU
+        GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
     }
     return 0;
 }
