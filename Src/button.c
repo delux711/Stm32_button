@@ -224,11 +224,11 @@ static void buttons_exti_init(void)
         EXTI->IMR  |= (1 << line);  // unmask
         EXTI->EMR  &= ~(1 << line); // len interrupt
         EXTI->RTSR |= (1 << line);  // zmena na nábežnú hranu
-        EXTI->FTSR |= (1 << line);  // aj zostupnú hranu (záleží od logiky tlačidla)
+        EXTI->FTSR |= (1 << line);  // povoliť aj zostupnú hranu; obe hrany sú vždy aktívne, bez ohľadu na logiku tlačidla
         EXTI->PR    = (1 << line);  // clear pending
 
         // Povolenie NVIC pre EXTI 10-15 (ak máš viac tlačidiel)
-        if(b->exti_line <= 4u) {
+        if (b->exti_line <= 4u) {
             NVIC_EnableIRQ(EXTI0_IRQn + b->exti_line);
         } else if(b->exti_line <= 9u) {
             NVIC_EnableIRQ(EXTI9_5_IRQn);
@@ -251,14 +251,20 @@ void buttons_hw_init(void)
         else if (b->port == GPIOD) RCC->APB2ENR |= RCC_APB2ENR_IOPDEN;
 
         // GPIO pin: vstup pull-up / pull-down
+        uint32_t pin = __builtin_ctz(b->pin_mask);
+        uint32_t value;
+        volatile uint32_t *port;
+
         if (b->pin_mask < (1 << 8)) {
-            b->port->CRL &= ~(0xF << (__builtin_ctz(b->pin_mask) * 4)); // vymaž
-            b->port->CRL |=  (0x8 << (__builtin_ctz(b->pin_mask) * 4)); // CNF=10, MODE=00
+            port = &b->port->CRL;
         } else {
-            uint32_t pin = __builtin_ctz(b->pin_mask) - 8;
-            b->port->CRH &= ~(0xF << (pin * 4));
-            b->port->CRH |=  (0x8 << (pin * 4));
+            pin -= 8;
+            port = &b->port->CRH;
         }
+        value = *port;
+        value &= ~(0xF << (pin * 4));
+        value |=  (0x8 << (pin * 4)); // CNF=10, MODE=00
+        *port = value;
 
         // pull-up
         b->port->BSRR = b->pin_mask;   // nastav high
