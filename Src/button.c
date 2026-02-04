@@ -99,18 +99,35 @@ static void button_multiclick_process(volatile button_t *b)
     }
 }
 
-static void led_pc13_init(void)
-{
+static void led_pc13_init(void) {
+    uint32_t reg;
     RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
+    reg = GPIOC->CRH;
+    reg &= ~((uint32_t)GPIO_CRH_CNF13 | GPIO_CRH_MODE13);
+    reg |= GPIO_CRH_MODE13; // 11: Output mode, max speed 50 MHz
+    GPIOC->CRH = reg;
 
-    GPIOC->CRH &= ~(0xF << 20);
-    GPIOC->CRH |=  (0x2 << 20);   // output, 2 MHz, push-pull
+    RCC->APB2ENR |= RCC_APB2ENR_IOPBEN;
+    reg = GPIOB->CRH;
+    reg &= ~((uint32_t)GPIO_CRH_CNF13 | GPIO_CRH_MODE13 | GPIO_CRH_CNF14 | GPIO_CRH_MODE14 | GPIO_CRH_CNF15 | GPIO_CRH_MODE15);
+    reg |= GPIO_CRH_MODE13 | GPIO_CRH_MODE14 | GPIO_CRH_MODE15; // 11: Output mode, max speed 50 MHz
+    GPIOB->CRH = reg;
 
-    GPIOC->BSRR = (1 << 13);     // LED OFF (active-low)
+    RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
+    reg = GPIOA->CRH;
+    reg &= ~((uint32_t)GPIO_CRH_CNF8 | GPIO_CRH_MODE8);
+    reg |= GPIO_CRH_MODE8; // 11: Output mode, max speed 50 MHz
+    GPIOA->CRH = reg;
 }
 
-void led_pc13_blink(uint8_t count)
-{
+static void led_pc13_toggle(void) {
+    // bit banding pre PC13 ODR registra je adresa 0x422201B4 = 0x42000000 + (0x1100c*32)+(0xD*4)
+    // adresa bitu BS13 pre PORTC je: 0x42220234 = 0x42000000 + (0x11010*32)+(13*4)
+    // adresa bitu BR13 pre PORTC je: 0x42220274 = 0x42000000 + (0x11010*32)+(29*4)
+    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+}
+
+void led_pc13_blink(uint8_t count) {
     for (uint8_t i = 0; i < count; i++) {
         GPIOC->BRR  = (1 << 13); // LED ON
         delay_ms(200);
@@ -119,28 +136,37 @@ void led_pc13_blink(uint8_t count)
     }
 }
 
-static void delay_ms(uint32_t ms)
-{
+static void delay_ms(uint32_t ms) {
     uint32_t start = sys_ms;
     while ((sys_ms - start) < ms) {
-        __WFI(); // šetrí CPU
+        // __WFI(); // šetrí CPU
     }
 }
 
 static volatile uint8_t papuValue = 0u;
 static void on_long_press(void) {
     papuValue = 4;
-    led_pc13_blink(papuValue);
+    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    GPIOA->BSRR = (GPIOA->ODR & GPIO_ODR_ODR8) ? GPIO_BSRR_BR8 : GPIO_BSRR_BS8;
+    // led_pc13_blink(papuValue);
 }
 static void on_single_click(void) {
     papuValue = 1;
-    led_pc13_blink(papuValue);
+    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    // led_pc13_blink(papuValue);
 }
 static void on_double_click(void) {
-    led_pc13_blink(papuValue);
+    papuValue = 2;
+    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR14) ? GPIO_BSRR_BR14 : GPIO_BSRR_BS14;
+    // led_pc13_blink(papuValue);
 }
 static void on_triple_click(void) {
-    led_pc13_blink(papuValue);
+    papuValue = 3;
+    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR15) ? GPIO_BSRR_BR15 : GPIO_BSRR_BS15;
+    // led_pc13_blink(papuValue);
 }
 
 void SysTick_Handler(void)
@@ -153,13 +179,16 @@ void SysTick_Handler(void)
 }
 
 void buttonInit(void) {
+    uint32_t reg;
+
     RCC->APB2ENR |= RCC_APB2ENR_IOPBEN;
     // Vymaž konfiguráciu PB12 (bity 19:16)
-    GPIOB->CRH &= ~(0xF << 16);
-    // CNF12 = 10, MODE12 = 00
-    GPIOB->CRH |=  (0x8 << 16);
+    reg = GPIOB->CRH;
+    reg &= ~((uint32_t)GPIO_CRH_CNF12 | GPIO_CRH_MODE12);
+    // CNF12 = 10 (10: Input with pull-up / pull-down), MODE12 = 00 (00: Input mode)
+    reg |=  (0x8 << 16);
     // Pull-up (ODR bit = 1)
-    GPIOB->ODR |= (1 << 12);
+    GPIOB->ODR |= GPIO_ODR_ODR12;
     led_pc13_init();
     SysTick_Config(SystemCoreClock / 1000); // 1 ms
 }
