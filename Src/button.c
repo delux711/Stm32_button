@@ -38,6 +38,11 @@ typedef struct {
     button_cb_t on_long;
 } button_t;
 
+volatile uint32_t sys_ms = 0;
+static void delay_ms(uint32_t ms);
+static void EXTI_globalHandler(void);
+
+
 static void btn0_single(void);
 static void btn0_double(void);
 static void btn0_triple(void);
@@ -46,15 +51,39 @@ static void btn0_long(void);
 static volatile button_t buttons[] = {
     // Tlačidlo 0 – PB12
     BUTTON_DEF(GPIOB, 12, 12, btn0_single, btn0_double, btn0_triple, btn0_long),
+    BUTTON_DEF(GPIOC, 15, 15, btn0_long  , btn0_triple, btn0_double, btn0_single),
+    BUTTON_DEF(GPIOA,  1,  1,          0U, btn0_double, btn0_triple, 0U),
     // Tlačidlo 1 – PB9
     // BUTTON_DEF(GPIOB,  9,  9, btn1_single, NULL, NULL, btn1_long)
 };
 #define BUTTON_COUNT (sizeof(buttons) / sizeof(buttons[0]))
 
-static volatile button_t btn = { 0 };
-volatile uint32_t sys_ms = 0;
+static volatile uint8_t papuValue = 0u;
+static void btn0_single(void) {
+    papuValue = 1;
+    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    // led_pc13_blink(papuValue);
+}
+static void btn0_double(void) {
+    papuValue = 2;
+    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR14) ? GPIO_BSRR_BR14 : GPIO_BSRR_BS14;
+    // led_pc13_blink(papuValue);
+}
+static void btn0_triple(void) {
+    papuValue = 3;
+    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR15) ? GPIO_BSRR_BR15 : GPIO_BSRR_BS15;
+    // led_pc13_blink(papuValue);
+}
+static void btn0_long(void) {
+    papuValue = 4;
+    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+    GPIOA->BSRR = (GPIOA->ODR & GPIO_ODR_ODR8) ? GPIO_BSRR_BR8 : GPIO_BSRR_BS8;
+    // led_pc13_blink(papuValue);
+}
 
-static void delay_ms(uint32_t ms);
 
 static inline uint8_t button_raw(const volatile button_t *b)
 {
@@ -184,74 +213,7 @@ static void delay_ms(uint32_t ms) {
     }
 }
 
-static volatile uint8_t papuValue = 0u;
-static void btn0_long(void) {
-    papuValue = 4;
-    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
-    GPIOA->BSRR = (GPIOA->ODR & GPIO_ODR_ODR8) ? GPIO_BSRR_BR8 : GPIO_BSRR_BS8;
-    // led_pc13_blink(papuValue);
-}
-static void btn0_single(void) {
-    papuValue = 1;
-    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
-    GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
-    // led_pc13_blink(papuValue);
-}
-static void btn0_double(void) {
-    papuValue = 2;
-    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
-    GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR14) ? GPIO_BSRR_BR14 : GPIO_BSRR_BS14;
-    // led_pc13_blink(papuValue);
-}
-static void btn0_triple(void) {
-    papuValue = 3;
-    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
-    GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR15) ? GPIO_BSRR_BR15 : GPIO_BSRR_BS15;
-    // led_pc13_blink(papuValue);
-}
-
-// void buttonInit(void) {
-//     uint32_t reg;
-
-//     RCC->APB2ENR |= RCC_APB2ENR_IOPBEN;
-//     // Vymaž konfiguráciu PB12 (bity 19:16)
-//     reg = GPIOB->CRH;
-//     reg &= ~((uint32_t)GPIO_CRH_CNF12 | GPIO_CRH_MODE12);
-//     // CNF12 = 10 (10: Input with pull-up / pull-down), MODE12 = 00 (00: Input mode)
-//     reg |=  (0x8 << 16);
-//     // Pull-up (ODR bit = 1)
-//     GPIOB->ODR |= GPIO_ODR_ODR12;
-//     led_pc13_init();
-//     SysTick_Config(SystemCoreClock / 1000); // 1 ms
-// }
-
-void buttons_hw_init(void)
-{
-    for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
-        button_t *b = (button_t *)&buttons[i];
-
-        // povoliť hodiny pre port
-        if (b->port == GPIOA) RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
-        else if (b->port == GPIOB) RCC->APB2ENR |= RCC_APB2ENR_IOPBEN;
-        else if (b->port == GPIOC) RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
-        else if (b->port == GPIOD) RCC->APB2ENR |= RCC_APB2ENR_IOPDEN;
-
-        // GPIO pin: vstup pull-up / pull-down
-        if (b->pin_mask < (1 << 8)) {
-            b->port->CRL &= ~(0xF << (__builtin_ctz(b->pin_mask) * 4)); // vymaž
-            b->port->CRL |=  (0x8 << (__builtin_ctz(b->pin_mask) * 4)); // CNF=10, MODE=00
-        } else {
-            uint32_t pin = __builtin_ctz(b->pin_mask) - 8;
-            b->port->CRH &= ~(0xF << (pin * 4));
-            b->port->CRH |=  (0x8 << (pin * 4));
-        }
-
-        // pull-up
-        b->port->BSRR = b->pin_mask;   // nastav high
-    }
-}
-
-void buttons_exti_init(void)
+static void buttons_exti_init(void)
 {
     // Povoliť AFIO
     RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
@@ -279,15 +241,69 @@ void buttons_exti_init(void)
         EXTI->RTSR |= (1 << line);  // zmena na nábežnú hranu
         EXTI->FTSR |= (1 << line);  // aj zostupnú hranu (záleží od logiky tlačidla)
         EXTI->PR   = (1 << line);   // clear pending
-    }
 
-    // Povolenie NVIC pre EXTI 10-15 (ak máš viac tlačidiel)
-    NVIC_EnableIRQ(EXTI15_10_IRQn);
+        // Povolenie NVIC pre EXTI 10-15 (ak máš viac tlačidiel)
+        if(b->exti_line <= 4u) {
+            NVIC_EnableIRQ(EXTI0_IRQn + b->exti_line);
+        } else if(b->exti_line <= 9u) {
+            NVIC_EnableIRQ(EXTI9_5_IRQn);
+        } else {
+            NVIC_EnableIRQ(EXTI15_10_IRQn);
+        }
+    }
 }
 
+void buttons_hw_init(void)
+{
+    for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
+        button_t *b = (button_t *)&buttons[i];
 
+        // povoliť hodiny pre port
+        if (b->port == GPIOA) RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
+        else if (b->port == GPIOB) RCC->APB2ENR |= RCC_APB2ENR_IOPBEN;
+        else if (b->port == GPIOC) RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
+        else if (b->port == GPIOD) RCC->APB2ENR |= RCC_APB2ENR_IOPDEN;
+
+        // GPIO pin: vstup pull-up / pull-down
+        if (b->pin_mask < (1 << 8)) {
+            b->port->CRL &= ~(0xF << (__builtin_ctz(b->pin_mask) * 4)); // vymaž
+            b->port->CRL |=  (0x8 << (__builtin_ctz(b->pin_mask) * 4)); // CNF=10, MODE=00
+        } else {
+            uint32_t pin = __builtin_ctz(b->pin_mask) - 8;
+            b->port->CRH &= ~(0xF << (pin * 4));
+            b->port->CRH |=  (0x8 << (pin * 4));
+        }
+
+        // pull-up
+        b->port->BSRR = b->pin_mask;   // nastav high
+    }
+    buttons_exti_init();
+}
+
+void EXTI0_IRQHandler(void) {
+    EXTI_globalHandler();
+}
+void EXTI1_IRQHandler(void) {
+    EXTI_globalHandler();
+}
+void EXTI2_IRQHandler(void) {
+    EXTI_globalHandler();
+}
+void EXTI3_IRQHandler(void) {
+    EXTI_globalHandler();
+}
+void EXTI4_IRQHandler(void) {
+    EXTI_globalHandler();
+}
+void EXTI9_5_IRQHandler(void) {
+    EXTI_globalHandler();
+}
 void EXTI15_10_IRQHandler(void)
 {
+    EXTI_globalHandler();
+}
+
+static void EXTI_globalHandler(void) {
     uint32_t pending = EXTI->PR & EXTI->IMR;
 
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {

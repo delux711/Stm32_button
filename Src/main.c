@@ -3,7 +3,6 @@
 
 extern void buttons_hw_init(void);
 extern void led_pc13_init(void);
-extern void buttons_exti_init(void);
 
 int main(void) {
     SystemInit();
@@ -11,11 +10,11 @@ int main(void) {
 
     led_pc13_init();
     buttons_hw_init();
-    buttons_exti_init();
     SysTick_Config(SystemCoreClock / 1000);
 
     for(;;) {
         __WFI();         // EXTI zobudí CPU
+        GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
     }
     return 0;
 }
