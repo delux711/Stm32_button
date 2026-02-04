@@ -39,8 +39,8 @@ typedef struct {
 } button_t;
 
 volatile uint32_t sys_ms = 0;
-static void delay_ms(uint32_t ms);
 static void EXTI_globalHandler(void);
+static void led_pc13_init(void);
 static void led_pc13_toggle(void);
 
 
@@ -162,7 +162,7 @@ static void button_multiclick_process(volatile button_t *b)
     }
 }
 
-void led_pc13_init(void) {
+static void led_pc13_init(void) {
     uint32_t reg;
     RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
     reg = GPIOC->CRH;
@@ -190,7 +190,8 @@ static void led_pc13_toggle(void) {
     GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
 }
 
-static void delay_ms(uint32_t ms) {
+
+void button_delay_ms(uint32_t ms) {
     uint32_t start = sys_ms;
     while ((sys_ms - start) < ms) {
         // __WFI(); // šetrí CPU
@@ -239,6 +240,7 @@ static void buttons_exti_init(void)
 
 void buttons_hw_init(void)
 {
+    led_pc13_init();
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
         button_t *b = (button_t *)&buttons[i];
 
