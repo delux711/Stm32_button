@@ -6,9 +6,6 @@
 #define LONG_PRESS_MS     800
 #define MULTICLICK_MS     400   // max pauza medzi klikmi
 
-#define BUTTON_DEF(port, pin, single_cb, double_cb, triple_cb, long_cb) \
-    { port, (1 << pin), pin, 0, 0, 0, 0, 0, 0, single_cb, double_cb, triple_cb, long_cb }
-
 typedef void (*button_cb_t)(void);
 typedef enum {
     BTN_IDLE = 0u,
@@ -42,6 +39,7 @@ volatile uint32_t sys_ms = 0;
 static void EXTI_globalHandler(void);
 static void led_pc13_init(void);
 static void led_pc13_toggle(void);
+static void buttons_globals_init(void);
 
 
 static void btn0_single(void);
@@ -50,15 +48,46 @@ static void btn0_triple(void);
 static void btn0_long(void);
 
 // NOTE: PIN sa nesmie opakovat -- tj. nie je mozne pouzit npr. PA1 a PB1 -- EXTI to nedovoluje (obmedzuje)
-static volatile button_t buttons[] = {
-            //  PORT, PIN,  single*      double*      triple*      long*    * press function
-    BUTTON_DEF(GPIOB, 12u, btn0_single, btn0_double, btn0_triple, btn0_long  ),  // Tlacidlo 0 – PB12
-    BUTTON_DEF(GPIOC, 15u, btn0_long  , btn0_triple, btn0_double, btn0_single),  // Tlacidlo 1 – PC15
-    BUTTON_DEF(GPIOA,  1u,     0u     , btn0_double, btn0_triple,     0u     )   // Tlacidlo 2 – PA1
-};
+static volatile button_t buttons[3];
 #define BUTTON_COUNT (sizeof(buttons) / sizeof(buttons[0]))
 
 static volatile uint8_t papuValue = 0u;
+
+static void button_assign(volatile button_t *b,
+                          GPIO_TypeDef *port,
+                          uint8_t pin,
+                          button_cb_t on_single,
+                          button_cb_t on_double,
+                          button_cb_t on_triple,
+                          button_cb_t on_long)
+{
+    b->port = port;
+    b->pin_mask = (uint16_t)(1u << pin);
+    b->exti_line = pin;
+
+    b->state = BTN_IDLE;
+    b->timer = 0u;
+    b->press_time = 0u;
+    b->click_count = 0u;
+    b->long_sent = 0u;
+    b->active = 0u;
+
+    b->on_single = on_single;
+    b->on_double = on_double;
+    b->on_triple = on_triple;
+    b->on_long = on_long;
+}
+
+static void buttons_globals_init(void)
+{
+    sys_ms = 0u;
+    papuValue = 0u;
+
+    button_assign(&buttons[0], GPIOB, 12u, btn0_single, btn0_double, btn0_triple, btn0_long);
+    button_assign(&buttons[1], GPIOC, 15u, btn0_long,   btn0_triple, btn0_double, btn0_single);
+    button_assign(&buttons[2], GPIOA,  1u, 0,           btn0_double, btn0_triple, 0);
+}
+
 static void btn0_single(void) {
     (void)papuValue;
     papuValue = 1;
@@ -240,6 +269,8 @@ static void buttons_exti_init(void)
 
 void buttons_hw_init(void)
 {
+    buttons_globals_init();
+
     led_pc13_init();
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
         button_t *b = (button_t *)&buttons[i];
