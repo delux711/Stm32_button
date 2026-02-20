@@ -119,6 +119,10 @@ __Vectors       DCD     __initial_sp               ; Top of Stack
                 DCD     EXTI15_10_IRQHandler       ; EXTI Line 15..10
                 DCD     RTCAlarm_IRQHandler        ; RTC Alarm through EXTI Line
                 DCD     USBWakeUp_IRQHandler       ; USB Wakeup from suspend
+                DCD     0
+                DCD     0
+                DCD     0
+                DCD     Reset_Handler
 __Vectors_End
 
 __Vectors_Size  EQU  __Vectors_End - __Vectors
