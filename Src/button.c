@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <stm32f10x.h>
-
+#include "button.h"
 
 #define DEBOUNCE_MS        20
 #define LONG_PRESS_MS     800
@@ -188,7 +188,7 @@ static void initExti(void)
     RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
 
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
-        btn_t *b = (btn_t *)&buttons[i];
+        volatile btn_t *b = (btn_t *)&buttons[i];
 
         // Mapovanie EXTI
         uint32_t line = b->exti_line;
@@ -255,7 +255,7 @@ void BUTTON_init(void)
     initGlobalVars();
     initLedPin();
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
-        btn_t *b = (btn_t *)&buttons[i];
+        volatile btn_t *b = (btn_t *)&buttons[i];
 
         // povoliť hodiny pre port
         if (b->port == GPIOA) RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
