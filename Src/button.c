@@ -9,13 +9,13 @@
 #define BUTTON_DEF(port, pin, single_cb, double_cb, triple_cb, long_cb) \
     { port, (1 << pin), pin, 0, 0, 0, 0, 0, 0, single_cb, double_cb, triple_cb, long_cb }
 
-typedef void (*button_cb_t)(void);
+typedef void (*buttonCb_t)(void);
 typedef enum {
     BTN_IDLE = 0u,
     BTN_DEBOUNCE_PRESS,
     BTN_PRESSED,
     BTN_DEBOUNCE_RELEASE
-} btn_state_t;
+} btnState_t;
 
 typedef struct {
     /* HW */
@@ -24,7 +24,7 @@ typedef struct {
     uint8_t       exti_line;   // 0..15
 
     /* SW */
-    btn_state_t state;
+    btnState_t  state;
     uint32_t    timer;
     uint32_t    press_time;
     uint8_t     click_count;
@@ -32,10 +32,10 @@ typedef struct {
     uint8_t     active;      // 0 = EXTI mode, 1 = polling
 
     /* callbacks */
-    button_cb_t on_single;
-    button_cb_t on_double;
-    button_cb_t on_triple;
-    button_cb_t on_long;
+    buttonCb_t on_single;
+    buttonCb_t on_double;
+    buttonCb_t on_triple;
+    buttonCb_t on_long;
 } button_t;
 
 volatile uint32_t sys_ms;
@@ -53,42 +53,43 @@ const button_t buttonInit[] = {
 #define BUTTON_COUNT ((uint32_t)(sizeof(buttonInit) / sizeof(buttonInit[0])))
 static volatile button_t buttons[BUTTON_COUNT];
 
-static void led_pc13_init(void);
-static void led_pc13_toggle(void);
-static void buttons_exti_init(void);
-static void EXTI_globalHandler(void);
-static void global_vars_init(void);
+static void initLedPin(void);
+static void initExti(void);
+static void initGlobalVars(void);
+
+static void ledPinToggle(void);
+static void irqGlobalHandler(void);
 
 static void btn0_single(void) {
     (void)papuValue;
     papuValue = 1;
-    led_pc13_toggle();
+    ledPinToggle();
     GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
 }
 static void btn0_double(void) {
     papuValue = 2;
-    led_pc13_toggle();
+    ledPinToggle();
     GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR14) ? GPIO_BSRR_BR14 : GPIO_BSRR_BS14;
 }
 static void btn0_triple(void) {
     papuValue = 3;
-    led_pc13_toggle();
+    ledPinToggle();
     GPIOB->BSRR = (GPIOB->ODR & GPIO_ODR_ODR15) ? GPIO_BSRR_BR15 : GPIO_BSRR_BS15;
 }
 static void btn0_long(void) {
     papuValue = 4;
-    led_pc13_toggle();
+    ledPinToggle();
     GPIOA->BSRR = (GPIOA->ODR & GPIO_ODR_ODR8) ? GPIO_BSRR_BR8 : GPIO_BSRR_BS8;
 }
 
-static inline uint8_t button_raw(const volatile button_t *b)
+static inline uint8_t buttonRaw(const volatile button_t *b)
 {
     return (b->port->IDR & b->pin_mask) ? 1 : 0;
 }
 
-static void button_process(volatile button_t *b)
+static void buttonProcess(volatile button_t *b)
 {
-    uint8_t raw = button_raw(b);
+    uint8_t raw = buttonRaw(b);
 
     switch (b->state) {
         case BTN_IDLE:
@@ -116,7 +117,6 @@ static void button_process(volatile button_t *b)
                 if (b->on_long)
                     b->on_long();
             }
-
             if (raw == 1) {
                 b->state = BTN_DEBOUNCE_RELEASE;
                 b->timer = DEBOUNCE_MS;
@@ -143,7 +143,7 @@ static void button_process(volatile button_t *b)
     }
 }
 
-static void button_multiclick_process(volatile button_t *b)
+static void buttonMulticlickProcess(volatile button_t *b)
 {
     if (b->click_count > 0 && b->state == BTN_IDLE) {
         if (b->timer > 0 && --b->timer == 0) {
@@ -161,7 +161,7 @@ static void button_multiclick_process(volatile button_t *b)
     }
 }
 
-static void led_pc13_init(void) {
+static void initLedPin(void) {
     uint32_t reg;
     RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
     reg = GPIOC->CRH;
@@ -182,14 +182,7 @@ static void led_pc13_init(void) {
     GPIOA->CRH = reg;
 }
 
-static void led_pc13_toggle(void) {
-    // bit banding pre PC13 ODR registra je adresa 0x422201B4 = 0x42000000 + (0x1100c*32)+(0xD*4)
-    // adresa bitu BS13 pre PORTC je: 0x42220234 = 0x42000000 + (0x11010*32)+(13*4)
-    // adresa bitu BR13 pre PORTC je: 0x42220274 = 0x42000000 + (0x11010*32)+(29*4)
-    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
-}
-
-static void buttons_exti_init(void)
+static void initExti(void)
 {
     // Povoliť AFIO
     RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
@@ -229,7 +222,22 @@ static void buttons_exti_init(void)
     }
 }
 
-static void EXTI_globalHandler(void) {
+static void initGlobalVars(void) {
+    sys_ms = 0u;
+    papuValue = 0u;
+    for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
+        buttons[i] = buttonInit[i];
+    }
+}
+
+static void ledPinToggle(void) {
+    // bit banding pre PC13 ODR registra je adresa 0x422201B4 = 0x42000000 + (0x1100c*32)+(0xD*4)
+    // adresa bitu BS13 pre PORTC je: 0x42220234 = 0x42000000 + (0x11010*32)+(13*4)
+    // adresa bitu BR13 pre PORTC je: 0x42220274 = 0x42000000 + (0x11010*32)+(29*4)
+    GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
+}
+
+static void irqGlobalHandler(void) {
     uint32_t pending = EXTI->PR & EXTI->IMR;
 
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
@@ -242,18 +250,10 @@ static void EXTI_globalHandler(void) {
     }
 }
 
-static void global_vars_init(void) {
-    sys_ms = 0u;
-    papuValue = 0u;
-    for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
-        buttons[i] = buttonInit[i];
-    }
-}
-
-void buttons_hw_init(void)
+void BUTTON_Init(void)
 {
-    global_vars_init();
-    led_pc13_init();
+    initGlobalVars();
+    initLedPin();
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
         button_t *b = (button_t *)&buttons[i];
 
@@ -282,10 +282,10 @@ void buttons_hw_init(void)
         // pull-up
         b->port->BSRR = b->pin_mask;   // nastav high
     }
-    buttons_exti_init();
+    initExti();
 }
 
-void button_delay_ms(uint32_t ms) {
+void BUTTON_delay_ms(uint32_t ms) {
     uint32_t start = sys_ms;
     while ((sys_ms - start) < ms) {
         // __WFI(); // šetrí CPU
@@ -293,26 +293,26 @@ void button_delay_ms(uint32_t ms) {
 }
 
 void EXTI0_IRQHandler(void) {
-    EXTI_globalHandler();
+    irqGlobalHandler();
 }
 void EXTI1_IRQHandler(void) {
-    EXTI_globalHandler();
+    irqGlobalHandler();
 }
 void EXTI2_IRQHandler(void) {
-    EXTI_globalHandler();
+    irqGlobalHandler();
 }
 void EXTI3_IRQHandler(void) {
-    EXTI_globalHandler();
+    irqGlobalHandler();
 }
 void EXTI4_IRQHandler(void) {
-    EXTI_globalHandler();
+    irqGlobalHandler();
 }
 void EXTI9_5_IRQHandler(void) {
-    EXTI_globalHandler();
+    irqGlobalHandler();
 }
 void EXTI15_10_IRQHandler(void)
 {
-    EXTI_globalHandler();
+    irqGlobalHandler();
 }
 
 void SysTick_Handler(void)
@@ -320,8 +320,8 @@ void SysTick_Handler(void)
     sys_ms++;
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
         if (buttons[i].active) {
-            button_process(&buttons[i]);
-            button_multiclick_process(&buttons[i]);
+            buttonProcess(&buttons[i]);
+            buttonMulticlickProcess(&buttons[i]);
         }
     }
 }

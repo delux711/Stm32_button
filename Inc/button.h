@@ -8,8 +8,8 @@ extern "C" {
 #include <stdint.h>
 
 // Initialization
-void buttons_hw_init(void);
-void button_delay_ms(uint32_t ms);
+void BUTTON_Init(void);
+void BUTTON_delay_ms(uint32_t ms);
 
 // IRQ handlers implemented in button.c
 void EXTI0_IRQHandler(void);
