@@ -9,7 +9,7 @@
 #define BUTTON_DEF(port, pin, single_cb, double_cb, triple_cb, long_cb) \
     { port, (1 << pin), pin, 0, 0, 0, 0, 0, 0, single_cb, double_cb, triple_cb, long_cb }
 
-typedef void (*buttonCb_t)(void);
+typedef void (*btnCb_t)(void);
 typedef enum {
     BTN_IDLE = 0u,
     BTN_DEBOUNCE_PRESS,
@@ -24,19 +24,19 @@ typedef struct {
     uint8_t       exti_line;   // 0..15
 
     /* SW */
-    btnState_t  state;
-    uint32_t    timer;
-    uint32_t    press_time;
-    uint8_t     click_count;
-    uint8_t     long_sent;
-    uint8_t     active;      // 0 = EXTI mode, 1 = polling
+    btnState_t    state;
+    uint32_t      timer;
+    uint32_t      press_time;
+    uint8_t       click_count;
+    uint8_t       long_sent;
+    uint8_t       active;      // 0 = EXTI mode, 1 = polling
 
     /* callbacks */
-    buttonCb_t on_single;
-    buttonCb_t on_double;
-    buttonCb_t on_triple;
-    buttonCb_t on_long;
-} button_t;
+    btnCb_t       on_single;
+    btnCb_t       on_double;
+    btnCb_t       on_triple;
+    btnCb_t       on_long;
+} btn_t;
 
 volatile uint32_t sys_ms;
 static volatile uint8_t papuValue;
@@ -45,13 +45,13 @@ static void btn0_single(void);
 static void btn0_double(void);
 static void btn0_triple(void);
 static void btn0_long(void);
-const button_t buttonInit[] = {
+static const btn_t buttonInit[] = {
     BUTTON_DEF(GPIOB, 12u, btn0_single, btn0_double, btn0_triple, btn0_long  ),  // Tlacidlo 0 – PB12
     BUTTON_DEF(GPIOC, 15u, btn0_long  , btn0_triple, btn0_double, btn0_single),  // Tlacidlo 1 – PC15
     BUTTON_DEF(GPIOA,  1u,     0u     , btn0_double, btn0_triple,     0u     )   // Tlacidlo 2 – PA1
 };
 #define BUTTON_COUNT ((uint32_t)(sizeof(buttonInit) / sizeof(buttonInit[0])))
-static volatile button_t buttons[BUTTON_COUNT];
+static volatile btn_t buttons[BUTTON_COUNT];
 
 static void initLedPin(void);
 static void initExti(void);
@@ -82,12 +82,12 @@ static void btn0_long(void) {
     GPIOA->BSRR = (GPIOA->ODR & GPIO_ODR_ODR8) ? GPIO_BSRR_BR8 : GPIO_BSRR_BS8;
 }
 
-static inline uint8_t buttonRaw(const volatile button_t *b)
+static inline uint8_t buttonRaw(const volatile btn_t *b)
 {
     return (b->port->IDR & b->pin_mask) ? 1 : 0;
 }
 
-static void buttonProcess(volatile button_t *b)
+static void buttonProcess(volatile btn_t *b)
 {
     uint8_t raw = buttonRaw(b);
 
@@ -143,7 +143,7 @@ static void buttonProcess(volatile button_t *b)
     }
 }
 
-static void buttonMulticlickProcess(volatile button_t *b)
+static void buttonMulticlickProcess(volatile btn_t *b)
 {
     if (b->click_count > 0 && b->state == BTN_IDLE) {
         if (b->timer > 0 && --b->timer == 0) {
@@ -188,7 +188,7 @@ static void initExti(void)
     RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
 
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
-        button_t *b = (button_t *)&buttons[i];
+        btn_t *b = (btn_t *)&buttons[i];
 
         // Mapovanie EXTI
         uint32_t line = b->exti_line;
@@ -250,12 +250,12 @@ static void irqGlobalHandler(void) {
     }
 }
 
-void BUTTON_Init(void)
+void BUTTON_init(void)
 {
     initGlobalVars();
     initLedPin();
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
-        button_t *b = (button_t *)&buttons[i];
+        btn_t *b = (btn_t *)&buttons[i];
 
         // povoliť hodiny pre port
         if (b->port == GPIOA) RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
@@ -285,7 +285,7 @@ void BUTTON_Init(void)
     initExti();
 }
 
-void BUTTON_delay_ms(uint32_t ms) {
+void BUTTON_delayMs(uint32_t ms) {
     uint32_t start = sys_ms;
     while ((sys_ms - start) < ms) {
         // __WFI(); // šetrí CPU
