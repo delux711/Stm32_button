@@ -6,7 +6,7 @@ int main(void) {
     SystemInit();
     SystemCoreClockUpdate();
 
-    buttons_hw_init();
+    BUTTON_init();
     SysTick_Config(SystemCoreClock / 1000);
 
     for(;;) {
