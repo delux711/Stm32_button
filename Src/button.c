@@ -38,30 +38,27 @@ typedef struct {
     button_cb_t on_long;
 } button_t;
 
-static void led_pc13_init(void);
-static void led_pc13_toggle(void);
-
-
 volatile uint32_t sys_ms;
-static volatile button_t buttons[3];
 static volatile uint8_t papuValue;
-static void EXTI_globalHandler(void);
 
 static void btn0_single(void);
 static void btn0_double(void);
 static void btn0_triple(void);
 static void btn0_long(void);
+const button_t buttonInit[] = {
+    BUTTON_DEF(GPIOB, 12u, btn0_single, btn0_double, btn0_triple, btn0_long  ),  // Tlacidlo 0 – PB12
+    BUTTON_DEF(GPIOC, 15u, btn0_long  , btn0_triple, btn0_double, btn0_single),  // Tlacidlo 1 – PC15
+    BUTTON_DEF(GPIOA,  1u,     0u     , btn0_double, btn0_triple,     0u     )   // Tlacidlo 2 – PA1
+};
+#define BUTTON_COUNT ((uint32_t)(sizeof(buttonInit) / sizeof(buttonInit[0])))
+static volatile button_t buttons[BUTTON_COUNT];
 
-#define BUTTON_COUNT ((uint32_t)(sizeof(buttons) / sizeof(buttons[0])))
+static void led_pc13_init(void);
+static void led_pc13_toggle(void);
+static void buttons_exti_init(void);
+static void EXTI_globalHandler(void);
+static void global_vars_init(void);
 
-void global_vars_init(void) {
-    sys_ms = 0u;
-    papuValue = 0u;
-    // NOTE: PIN sa nesmie opakovat -- tj. nie je mozne pouzit npr. PA1 a PB1 -- EXTI to nedovoluje (obmedzuje)
-    buttons[0] = (button_t)BUTTON_DEF(GPIOB, 12u, btn0_single, btn0_double, btn0_triple, btn0_long  );  // Tlacidlo 0 – PB12
-    buttons[1] = (button_t)BUTTON_DEF(GPIOC, 15u, btn0_long  , btn0_triple, btn0_double, btn0_single);  // Tlacidlo 1 – PC15
-    buttons[2] = (button_t)BUTTON_DEF(GPIOA,  1u,     0u     , btn0_double, btn0_triple,     0u     );  // Tlacidlo 2 – PA1
-}
 static void btn0_single(void) {
     (void)papuValue;
     papuValue = 1;
@@ -83,7 +80,6 @@ static void btn0_long(void) {
     led_pc13_toggle();
     GPIOA->BSRR = (GPIOA->ODR & GPIO_ODR_ODR8) ? GPIO_BSRR_BR8 : GPIO_BSRR_BS8;
 }
-
 
 static inline uint8_t button_raw(const volatile button_t *b)
 {
@@ -193,14 +189,6 @@ static void led_pc13_toggle(void) {
     GPIOC->BSRR = (GPIOC->ODR & GPIO_ODR_ODR13) ? GPIO_BSRR_BR13 : GPIO_BSRR_BS13;
 }
 
-
-void button_delay_ms(uint32_t ms) {
-    uint32_t start = sys_ms;
-    while ((sys_ms - start) < ms) {
-        // __WFI(); // šetrí CPU
-    }
-}
-
 static void buttons_exti_init(void)
 {
     // Povoliť AFIO
@@ -241,6 +229,27 @@ static void buttons_exti_init(void)
     }
 }
 
+static void EXTI_globalHandler(void) {
+    uint32_t pending = EXTI->PR & EXTI->IMR;
+
+    for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
+        uint32_t mask = (1 << buttons[i].exti_line);
+        if (pending & mask) {
+            EXTI->PR = mask;                 // clear pending
+            EXTI->IMR &= ~mask;              // vypnúť EXTI
+            buttons[i].active = 1;           // prejsť do polling
+        }
+    }
+}
+
+static void global_vars_init(void) {
+    sys_ms = 0u;
+    papuValue = 0u;
+    for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
+        buttons[i] = buttonInit[i];
+    }
+}
+
 void buttons_hw_init(void)
 {
     global_vars_init();
@@ -276,6 +285,13 @@ void buttons_hw_init(void)
     buttons_exti_init();
 }
 
+void button_delay_ms(uint32_t ms) {
+    uint32_t start = sys_ms;
+    while ((sys_ms - start) < ms) {
+        // __WFI(); // šetrí CPU
+    }
+}
+
 void EXTI0_IRQHandler(void) {
     EXTI_globalHandler();
 }
@@ -297,19 +313,6 @@ void EXTI9_5_IRQHandler(void) {
 void EXTI15_10_IRQHandler(void)
 {
     EXTI_globalHandler();
-}
-
-static void EXTI_globalHandler(void) {
-    uint32_t pending = EXTI->PR & EXTI->IMR;
-
-    for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
-        uint32_t mask = (1 << buttons[i].exti_line);
-        if (pending & mask) {
-            EXTI->PR = mask;                 // clear pending
-            EXTI->IMR &= ~mask;              // vypnúť EXTI
-            buttons[i].active = 1;           // prejsť do polling
-        }
-    }
 }
 
 void SysTick_Handler(void)
