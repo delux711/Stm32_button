@@ -20,8 +20,8 @@ typedef enum {
 typedef struct {
     /* HW */
     GPIO_TypeDef *port;
-    uint16_t    pin_mask;
-    uint8_t     exti_line;   // 0..15
+    uint16_t      pin_mask;
+    uint8_t       exti_line;   // 0..15
 
     /* SW */
     btn_state_t state;
@@ -38,27 +38,30 @@ typedef struct {
     button_cb_t on_long;
 } button_t;
 
-volatile uint32_t sys_ms = 0;
-static void EXTI_globalHandler(void);
 static void led_pc13_init(void);
 static void led_pc13_toggle(void);
 
+
+volatile uint32_t sys_ms;
+static volatile button_t buttons[3];
+static volatile uint8_t papuValue;
+static void EXTI_globalHandler(void);
 
 static void btn0_single(void);
 static void btn0_double(void);
 static void btn0_triple(void);
 static void btn0_long(void);
 
-// NOTE: PIN sa nesmie opakovat -- tj. nie je mozne pouzit npr. PA1 a PB1 -- EXTI to nedovoluje (obmedzuje)
-static volatile button_t buttons[] = {
-            //  PORT, PIN,  single*      double*      triple*      long*    * press function
-    BUTTON_DEF(GPIOB, 12u, btn0_single, btn0_double, btn0_triple, btn0_long  ),  // Tlacidlo 0 – PB12
-    BUTTON_DEF(GPIOC, 15u, btn0_long  , btn0_triple, btn0_double, btn0_single),  // Tlacidlo 1 – PC15
-    BUTTON_DEF(GPIOA,  1u,     0u     , btn0_double, btn0_triple,     0u     )   // Tlacidlo 2 – PA1
-};
-#define BUTTON_COUNT (sizeof(buttons) / sizeof(buttons[0]))
+#define BUTTON_COUNT ((uint32_t)(sizeof(buttons) / sizeof(buttons[0])))
 
-static volatile uint8_t papuValue = 0u;
+void global_vars_init(void) {
+    sys_ms = 0u;
+    papuValue = 0u;
+    // NOTE: PIN sa nesmie opakovat -- tj. nie je mozne pouzit npr. PA1 a PB1 -- EXTI to nedovoluje (obmedzuje)
+    buttons[0] = (button_t)BUTTON_DEF(GPIOB, 12u, btn0_single, btn0_double, btn0_triple, btn0_long  );  // Tlacidlo 0 – PB12
+    buttons[1] = (button_t)BUTTON_DEF(GPIOC, 15u, btn0_long  , btn0_triple, btn0_double, btn0_single);  // Tlacidlo 1 – PC15
+    buttons[2] = (button_t)BUTTON_DEF(GPIOA,  1u,     0u     , btn0_double, btn0_triple,     0u     );  // Tlacidlo 2 – PA1
+}
 static void btn0_single(void) {
     (void)papuValue;
     papuValue = 1;
@@ -240,6 +243,7 @@ static void buttons_exti_init(void)
 
 void buttons_hw_init(void)
 {
+    global_vars_init();
     led_pc13_init();
     for (uint32_t i = 0; i < BUTTON_COUNT; i++) {
         button_t *b = (button_t *)&buttons[i];
