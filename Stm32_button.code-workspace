@@ -1,0 +1,35 @@
+{
+	"folders": [
+		{
+			"path": "../Stm32_button"
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"**/DebugConfig": true,
+			"**/Listings": false,
+			"**/Listings/**": false,
+			"**/Listings/*.map": false,
+			"**/Listings/*.lst": false,
+			"**/Objects": false,
+			"**/Objects/**": false,
+			"**/Objects/*.sct": false,
+			"**/Objects/*.iex": true,
+			"**/RTE": false,
+			"**/RTE/_RAM": true,
+			"**/RTE/_ROM": true,
+			"**/RTE/Device": false,
+			"**/*.sct": false,
+			"**/*.d": true,
+			"**/*.o": true,
+			"**/*.dep": true,
+			"**/*.htm": true,
+			"**/*.axf": true,
+			"**/*.lnp": true,
+			"**/*.scvd": true,
+			"**/JLinkLog.txt": true,
+			"**/JLinkSettings.ini": true,
+			"**/*.uvguix.*": true
+		}
+	}
+}
